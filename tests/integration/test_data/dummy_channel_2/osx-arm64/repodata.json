@@ -1,0 +1,37 @@
+{
+  "info": {
+    "subdir": "osx-arm64"
+  },
+  "packages": {},
+  "packages.conda": {
+    "dummy-b-0.1.0-h60d57d3_0.conda": {
+      "arch": "arm64",
+      "build": "h60d57d3_0",
+      "build_number": 0,
+      "depends": [],
+      "md5": "fc8ab1f16d2ae3fceefa62ffbf698322",
+      "name": "dummy-b",
+      "platform": "osx",
+      "sha256": "8cb0c2d1bc3d6a0bef10da9729a77e90eb4409262b90e81df744238a7d4dfb35",
+      "size": 2407,
+      "subdir": "osx-arm64",
+      "timestamp": 1729171363318,
+      "version": "0.1.0"
+    },
+    "dummy-x-0.1.0-h60d57d3_0.conda": {
+      "arch": "arm64",
+      "build": "h60d57d3_0",
+      "build_number": 0,
+      "depends": [],
+      "md5": "7333bd1b357811d17ba473b7163faeb2",
+      "name": "dummy-x",
+      "platform": "osx",
+      "sha256": "c8822c60f97b16d31276ca883982dab48b7107e002b01ae1bb347c138d0730c0",
+      "size": 2413,
+      "subdir": "osx-arm64",
+      "timestamp": 1729171363318,
+      "version": "0.1.0"
+    }
+  },
+  "repodata_version": 2
+}
