@@ -42,7 +42,6 @@ pub trait MetadataCache: Clone + Sized {
     where
         Self::Metadata: VersionedMetadata,
     {
-        // Locate the cache file
         let cache_dir = self.root().join(input.hash_key());
         let cache_file_path = cache_dir.join(self.cache_file_name());
 
@@ -112,7 +111,6 @@ pub trait MetadataCache: Clone + Sized {
     where
         Self::Metadata: VersionedMetadata,
     {
-        // Locate the cache file
         let cache_dir = self.root().join(input.hash_key());
         tokio::fs::create_dir_all(&cache_dir).await.map_err(|e| {
             Self::Error::from_io_error("creating cache directory".to_string(), cache_dir.clone(), e)
