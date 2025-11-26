@@ -42,7 +42,7 @@ pub struct SourceRecord {
 /// Defines the hash of the input files that were used to build the metadata of
 /// the record. If reevaluating and hashing the globs results in a different
 /// hash, the metadata is considered invalid.
-#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InputHash {
     /// The hash of the input files that matched the globs.
     #[serde(

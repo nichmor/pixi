@@ -62,7 +62,6 @@ pub trait MetadataCache: Clone + Sized {
             }
         };
 
-        // Acquire lock briefly
         let mut locked_cache_file = cache_file.lock_write().await.map_err(|e| {
             Self::Error::from_io_error(
                 "locking cache file".to_string(),
@@ -159,7 +158,7 @@ pub trait MetadataCache: Clone + Sized {
                 )
             })?;
 
-        // Version check: if cache exists and has different version, return conflict
+        // If cache exists and has different version, return conflict
         if !current_contents.is_empty() {
             if let Ok(current_metadata) = serde_json::from_str::<Self::Metadata>(&current_contents)
             {
@@ -175,7 +174,6 @@ pub trait MetadataCache: Clone + Sized {
         let mut new_metadata = metadata;
         new_metadata.set_cache_version(expected_version + 1);
 
-        // Serialize the new metadata
         let bytes =
             serde_json::to_vec(&new_metadata).expect("serialization to JSON should not fail");
 

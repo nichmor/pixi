@@ -1694,7 +1694,6 @@ pub(crate) async fn verify_package_platform_satisfiability(
     }
 
     // Check if all source packages are still up-to-date.
-    // Process all source packages concurrently for better performance.
     let source_records: Vec<_> = locked_pixi_records
         .records
         .iter()
