@@ -108,7 +108,8 @@ impl SourceMetadataSpec {
         if !skip_cache {
             if let Some(cached_metadata) = Self::verify_cache_freshness(
                 &build_backend_metadata.metadata.input_hash,
-                cached_metadata,
+                metadata,
+                &self.backend_metadata.variants,
             )
             .await?
             {
@@ -138,6 +139,7 @@ impl SourceMetadataSpec {
                     id: random(),
                     cache_version,
                     input_hash: build_backend_metadata.metadata.input_hash.clone(),
+                    build_variants: self.backend_metadata.variants.clone(),
                     metadata: Metadata {
                         records: records.clone(),
                     },
@@ -186,6 +188,7 @@ impl SourceMetadataSpec {
                     id: random(),
                     cache_version,
                     input_hash: build_backend_metadata.metadata.input_hash.clone(),
+                    build_variants: self.backend_metadata.variants.clone(),
                     metadata: Metadata {
                         records: futures.try_collect().await?,
                     },
@@ -224,7 +227,6 @@ impl SourceMetadataSpec {
             package: self.package.clone(),
             channel_urls: self.backend_metadata.channels.clone(),
             build_environment: self.backend_metadata.build_environment.clone(),
-            build_variants: self.backend_metadata.variants.clone().unwrap_or_default(),
             enabled_protocols: self.backend_metadata.enabled_protocols.clone(),
             pinned_source: self.backend_metadata.manifest_source.clone(),
         }
@@ -233,11 +235,18 @@ impl SourceMetadataSpec {
     async fn verify_cache_freshness(
         current_input_hash: &Option<InputHash>,
         cached_metadata: Option<CachedSourceMetadata>,
+        requested_variants: &Option<BTreeMap<String, Vec<String>>>,
     ) -> Result<Option<CachedSourceMetadata>, CommandDispatcherError<SourceMetadataError>> {
         let Some(cached_metadata) = cached_metadata else {
             tracing::debug!("no cached metadata passed.");
             return Ok(None);
         };
+
+        // Check if the build variants match
+        if cached_metadata.build_variants != *requested_variants {
+            tracing::trace!("found cached response with different variants, invalidating cache.");
+            return Ok(None);
+        }
 
         // If neither has an input hash, consider it fresh
         let (Some(current_hash), Some(cached_hash)) =

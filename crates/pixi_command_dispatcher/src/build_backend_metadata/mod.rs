@@ -204,6 +204,7 @@ impl BuildBackendMetadataSpec {
                 &command_dispatcher,
                 cached_metadata,
                 &additional_glob_hash,
+                &self.variants,
             )
             .await?
             {
@@ -350,6 +351,7 @@ impl BuildBackendMetadataSpec {
         command_dispatcher: &CommandDispatcher,
         metadata: Option<CachedCondaMetadata>,
         additional_glob_hash: &[u8],
+        requested_variants: &Option<BTreeMap<String, Vec<String>>>,
     ) -> Result<Option<CachedCondaMetadata>, CommandDispatcherError<BuildBackendMetadataError>>
     {
         let Some(metadata) = metadata else {
@@ -362,6 +364,14 @@ impl BuildBackendMetadataSpec {
                 pixi_build_types::procedures::conda_outputs::METHOD_NAME
             }
         };
+
+        // Check if the build variants match
+        if metadata.build_variants != *requested_variants {
+            tracing::trace!(
+                "found cached `{metadata_kind}` response with different variants, invalidating cache."
+            );
+            return Ok(None);
+        }
 
         let Some(input_globs) = &metadata.input_hash else {
             // No input hash so just assume it is still valid.
@@ -518,6 +528,7 @@ impl BuildBackendMetadataSpec {
                 outputs: outputs.outputs,
             },
             build_source_checkout,
+            build_variants: self.variants.clone(),
         })
     }
 
@@ -557,7 +568,6 @@ impl BuildBackendMetadataSpec {
         BuildBackendMetadataKey {
             channel_urls: self.channels.clone(),
             build_environment: self.build_environment.clone(),
-            build_variants: self.variants.clone().unwrap_or_default(),
             enabled_protocols: self.enabled_protocols.clone(),
             pinned_source: self.manifest_source.clone(),
         }
