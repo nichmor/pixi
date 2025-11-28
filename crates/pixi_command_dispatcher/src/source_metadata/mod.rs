@@ -108,7 +108,7 @@ impl SourceMetadataSpec {
         if !skip_cache {
             if let Some(cached_metadata) = Self::verify_cache_freshness(
                 &build_backend_metadata.metadata.input_hash,
-                metadata,
+                cached_metadata,
                 &self.backend_metadata.variants,
             )
             .await?
