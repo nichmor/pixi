@@ -132,7 +132,6 @@ impl SourceMetadataSpec {
                     build_backend_metadata.build_source.as_ref(),
                     packages,
                     &self.package,
-                    &build_backend_metadata.metadata.input_hash,
                 );
 
                 let cached_source_metadata = CachedSourceMetadata {
@@ -177,7 +176,6 @@ impl SourceMetadataSpec {
                     futures.push(self.resolve_output(
                         &command_dispatcher,
                         output,
-                        build_backend_metadata.metadata.input_hash.clone(),
                         build_backend_metadata.manifest_source.clone(),
                         build_backend_metadata.build_source.clone(),
                         reporter.clone(),
@@ -263,7 +261,6 @@ impl SourceMetadataSpec {
         &self,
         command_dispatcher: &CommandDispatcher,
         output: &CondaOutput,
-        input_hash: Option<InputHash>,
         manifest_source: PinnedSourceSpec,
         build_source: Option<PinnedSourceSpec>,
         reporter: Option<Arc<dyn RunExportsReporter>>,
@@ -484,7 +481,6 @@ impl SourceMetadataSpec {
                 experimental_extra_depends: Default::default(),
             },
             manifest_source,
-            input_hash,
             build_source,
             sources: sources
                 .into_iter()
