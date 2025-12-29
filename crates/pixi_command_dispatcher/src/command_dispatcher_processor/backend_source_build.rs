@@ -1,6 +1,7 @@
 use futures::FutureExt;
 
 use super::{CommandDispatcherProcessor, PendingBackendSourceBuild, TaskResult};
+use crate::command_dispatcher::CommandDispatcherContext;
 use crate::{
     BackendBuiltSource, CommandDispatcherError, CommandDispatcherErrorResultExt, Reporter,
     backend_source_build::BackendSourceBuildError,
@@ -46,8 +47,6 @@ impl CommandDispatcherProcessor {
     }
 
     fn start_next_backend_source_build(&mut self) {
-        use crate::command_dispatcher::CommandDispatcherContext;
-
         let limit = self
             .inner
             .limits
@@ -104,8 +103,6 @@ impl CommandDispatcherProcessor {
         id: BackendSourceBuildId,
         result: Result<BackendBuiltSource, CommandDispatcherError<BackendSourceBuildError>>,
     ) {
-        use crate::command_dispatcher::CommandDispatcherContext;
-
         let context = CommandDispatcherContext::BackendSourceBuild(id);
         self.parent_contexts.remove(&context);
         self.remove_cancellation_token(context);

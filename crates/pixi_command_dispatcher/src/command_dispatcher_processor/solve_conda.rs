@@ -4,7 +4,9 @@ use pixi_record::PixiRecord;
 use super::{CommandDispatcherProcessor, PendingSolveCondaEnvironment, TaskResult};
 use crate::{
     CommandDispatcherError, CommandDispatcherErrorResultExt, Reporter,
-    command_dispatcher::{SolveCondaEnvironmentId, SolveCondaEnvironmentTask},
+    command_dispatcher::{
+        CommandDispatcherContext, SolveCondaEnvironmentId, SolveCondaEnvironmentTask,
+    },
     solve_conda::SolveCondaEnvironmentError,
 };
 
@@ -47,8 +49,6 @@ impl CommandDispatcherProcessor {
 
     /// Queue as many solves as possible within the allowed limits.
     fn start_next_conda_environment_solves(&mut self) {
-        use crate::command_dispatcher::CommandDispatcherContext;
-
         let limit = self
             .inner
             .limits
@@ -102,8 +102,6 @@ impl CommandDispatcherProcessor {
         id: SolveCondaEnvironmentId,
         result: Result<Vec<PixiRecord>, CommandDispatcherError<SolveCondaEnvironmentError>>,
     ) {
-        use crate::command_dispatcher::CommandDispatcherContext;
-
         let context = CommandDispatcherContext::SolveCondaEnvironment(id);
         self.parent_contexts.remove(&context);
         self.remove_cancellation_token(context);
