@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt, path::PathBuf};
+use std::{collections::BTreeMap, fmt, path::PathBuf, sync::Arc};
 
 use itertools::chain;
 use miette::Diagnostic;
@@ -339,7 +339,7 @@ impl SourceBuildCacheStatusSpec {
                 self.enabled_protocols.clone(),
             )
             .await
-            .map_err_with(SourceBuildCacheStatusError::Discovery)?;
+            .map_err_with(|e| SourceBuildCacheStatusError::Discovery(Arc::new(e)))?;
 
         // Compute a hash of the package configuration.
         let package_build_input_hash = PackageBuildInputHashBuilder {
@@ -382,7 +382,7 @@ impl SourceBuildCacheStatusSpec {
             .await
             .map_err_with(SourceBuildCacheStatusError::SourceCheckout)?;
 
-        let source_dir = source_build_checkout.path.as_std_path();
+        let source_dir = source_build_checkout.path.as_dir_or_file_parent();
         let timestamp = cached_build.record.package_record.timestamp;
 
         // Check the files that were explicitly recorded at cache time.
@@ -421,14 +421,14 @@ impl SourceBuildCacheStatusSpec {
         // This detects file additions.
         let glob_set = GlobSet::create(source_info.input_globs.iter().map(String::as_str));
         let matching_files = glob_set
-            .collect_matching(source_dir)
-            .map_err(SourceBuildCacheStatusError::GlobSet)
+            .collect_matching(source_dir.as_std_path())
+            .map_err(SourceBuildCacheStatusError::from)
             .map_err(CommandDispatcherError::Failed)?;
 
         for matching_file in matching_files {
             let path = matching_file.into_path();
             let relative_path = path
-                .strip_prefix(source_dir)
+                .strip_prefix(source_dir.as_std_path())
                 .ok()
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| path.clone());
@@ -446,7 +446,7 @@ impl SourceBuildCacheStatusSpec {
     }
 }
 
-#[derive(Debug, thiserror::Error, Diagnostic)]
+#[derive(Debug, Clone, thiserror::Error, Diagnostic)]
 pub enum SourceBuildCacheStatusError {
     #[error(transparent)]
     BuildCache(BuildCacheError),
@@ -457,11 +457,17 @@ pub enum SourceBuildCacheStatusError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Discovery(pixi_build_discovery::DiscoveryError),
+    Discovery(Arc<pixi_build_discovery::DiscoveryError>),
 
     #[error(transparent)]
-    GlobSet(#[from] pixi_glob::GlobSetError),
+    GlobSet(Arc<pixi_glob::GlobSetError>),
 
     #[error("a cycle was detected in the build/host dependencies of the package")]
     Cycle,
+}
+
+impl From<pixi_glob::GlobSetError> for SourceBuildCacheStatusError {
+    fn from(err: pixi_glob::GlobSetError) -> Self {
+        Self::GlobSet(Arc::new(err))
+    }
 }

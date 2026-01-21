@@ -5,15 +5,15 @@ use pixi_build_discovery::{CommandSpec, EnabledProtocols};
 use pixi_build_frontend::Backend;
 use pixi_build_types::procedures::conda_outputs::CondaOutputsParams;
 use pixi_glob::GlobSet;
-use pixi_record::{PinnedSourceSpec, VariantValue};
-use pixi_spec::{SourceAnchor, SourceSpec};
+use pixi_record::{PinnedBuildSourceSpec, PinnedSourceSpec, VariantValue};
+use pixi_spec::{SourceAnchor, SourceLocationSpec};
 use rattler_conda_types::{ChannelConfig, ChannelUrl};
 use std::time::SystemTime;
 use std::{
     collections::{BTreeMap, HashSet},
     hash::Hash,
     path::PathBuf,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 use thiserror::Error;
 use tracing::instrument;
@@ -32,6 +32,7 @@ use crate::{
 use pixi_build_discovery::BackendSpec;
 use pixi_build_frontend::BackendOverride;
 use pixi_path::AbsPath;
+use pixi_path::normalize::normalize_typed;
 
 static WARNED_BACKENDS: Lazy<Mutex<HashSet<String>>> = Lazy::new(|| Mutex::new(HashSet::new()));
 
@@ -56,9 +57,9 @@ pub struct BuildBackendMetadataSpec {
     /// The optional pinned location of the source code. If not provided, the
     /// location in the manifest is resolved.
     ///
-    /// This is passed as a hint. If the [`SourceSpec`] in the discovered
-    /// manifest does not match with the pinned source provided here, the one
-    /// in the manifest takes precedence and it is reresolved.
+    /// This is passed as a hint. If the [`pixi_spec::SourceSpec`] in the
+    /// discovered manifest does not match with the pinned source provided
+    /// here, the one in the manifest takes precedence and it is reresolved.
     ///
     /// See [`PinnedSourceSpec::matches_source_spec`] how the matching is done.
     pub preferred_build_source: Option<PinnedSourceSpec>,
@@ -130,47 +131,61 @@ impl BuildBackendMetadataSpec {
                 self.enabled_protocols.clone(),
             )
             .await
-            .map_err_with(BuildBackendMetadataError::Discovery)?;
+            .map_err_with(|e| BuildBackendMetadataError::Discovery(Arc::new(e)))?;
 
         // Determine the location of the source to build from.
         let manifest_source_anchor =
-            SourceAnchor::from(SourceSpec::from(self.manifest_source.clone()));
+            SourceAnchor::from(SourceLocationSpec::from(self.manifest_source.clone()));
         // `build_source` is still relative to the `manifest_source`
         let build_source_checkout = match &discovered_backend.init_params.build_source {
             None => None,
             Some(build_source) => {
-                // An out of tree source is provided. Resolve it against the manifest source.
-                let resolved_location = manifest_source_anchor.resolve(build_source.clone());
-                let resolved_source_build_spec = SourceSpec {
-                    location: resolved_location.clone(),
+                let relative_build_source_spec = if let SourceLocationSpec::Path(path) =
+                    build_source
+                    && path.path.is_relative()
+                {
+                    Some(normalize_typed(path.path.to_path()).to_string())
+                } else {
+                    None
                 };
+
+                // An out-of-tree source is provided. Resolve it against the manifest source.
+                let resolved_location = manifest_source_anchor.resolve(build_source.clone());
 
                 // Check if we have a preferred build source that matches this same location
                 match &self.preferred_build_source {
-                    Some(pinned) if pinned.matches_source_spec(&resolved_source_build_spec) => {
-                        Some(
-                            command_dispatcher
-                                .checkout_pinned_source(pinned.clone())
-                                .await
-                                .map_err_with(BuildBackendMetadataError::SourceCheckout)?,
-                        )
-                    }
-                    _ => Some(
+                    Some(pinned) if pinned.matches_source_spec(&resolved_location) => Some((
+                        command_dispatcher
+                            .checkout_pinned_source(pinned.clone())
+                            .await
+                            .map_err_with(BuildBackendMetadataError::SourceCheckout)?,
+                        relative_build_source_spec,
+                    )),
+                    _ => Some((
                         command_dispatcher
                             .pin_and_checkout(resolved_location)
                             .await
                             .map_err_with(BuildBackendMetadataError::SourceCheckout)?,
-                    ),
+                        relative_build_source_spec,
+                    )),
                 }
             }
         };
 
-        let (build_source_checkout, build_source) = if let Some(checkout) = build_source_checkout {
-            let pinned = checkout.pinned.clone();
-            (checkout, Some(pinned))
-        } else {
-            (manifest_source_checkout.clone(), None)
-        };
+        let (build_source_checkout, build_source) =
+            if let Some((checkout, relative_build_source)) = build_source_checkout {
+                let pinned = checkout.pinned.clone();
+                (
+                    checkout,
+                    Some(if let Some(relative) = relative_build_source {
+                        PinnedBuildSourceSpec::Relative(relative, pinned)
+                    } else {
+                        PinnedBuildSourceSpec::Absolute(pinned)
+                    }),
+                )
+            } else {
+                (manifest_source_checkout.clone(), None)
+            };
         let manifest_source_location = SourceCodeLocation::new(
             manifest_source_checkout.pinned.clone(),
             build_source.clone(),
@@ -552,7 +567,7 @@ impl BuildBackendMetadataSpec {
                 let _err = futures::executor::block_on(log_sink.send(line));
             })
             .await
-            .map_err(BuildBackendMetadataError::Communication)
+            .map_err(|e| BuildBackendMetadataError::Communication(Arc::new(e)))
             .map_err(CommandDispatcherError::Failed)?;
         let timestamp = SystemTime::now();
 
@@ -616,7 +631,7 @@ impl BuildBackendMetadataSpec {
     }
 }
 
-#[derive(Debug, Error, Diagnostic)]
+#[derive(Debug, Clone, Error, Diagnostic)]
 pub enum BuildBackendMetadataError {
     #[error(transparent)]
     #[diagnostic(transparent)]
@@ -624,7 +639,7 @@ pub enum BuildBackendMetadataError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Discovery(#[from] pixi_build_discovery::DiscoveryError),
+    Discovery(Arc<pixi_build_discovery::DiscoveryError>),
 
     #[error("could not initialize the build-backend")]
     Initialize(
@@ -635,7 +650,7 @@ pub enum BuildBackendMetadataError {
 
     #[error(transparent)]
     #[diagnostic(transparent)]
-    Communication(#[from] pixi_build_frontend::json_rpc::CommunicationError),
+    Communication(Arc<pixi_build_frontend::json_rpc::CommunicationError>),
 
     #[error("the build backend {0} does not support the `conda/outputs` procedure")]
     BackendMissingCapabilities(String),
@@ -646,16 +661,46 @@ pub enum BuildBackendMetadataError {
     DuplicateVariants { package: String, duplicates: String },
 
     #[error("could not compute hash of input files")]
-    GlobHash(#[from] pixi_glob::GlobHashError),
+    GlobHash(Arc<pixi_glob::GlobHashError>),
 
     #[error("failed to determine input file modification times")]
-    GlobSet(#[from] pixi_glob::GlobSetError),
+    GlobSet(Arc<pixi_glob::GlobSetError>),
 
     #[error(transparent)]
     Cache(#[from] build_backend_metadata::BuildBackendMetadataCacheError),
 
     #[error("failed to normalize path")]
-    NormalizePath(#[from] pixi_path::NormalizeError),
+    NormalizePath(Arc<pixi_path::NormalizeError>),
+}
+
+impl From<pixi_build_discovery::DiscoveryError> for BuildBackendMetadataError {
+    fn from(err: pixi_build_discovery::DiscoveryError) -> Self {
+        Self::Discovery(Arc::new(err))
+    }
+}
+
+impl From<pixi_build_frontend::json_rpc::CommunicationError> for BuildBackendMetadataError {
+    fn from(err: pixi_build_frontend::json_rpc::CommunicationError) -> Self {
+        Self::Communication(Arc::new(err))
+    }
+}
+
+impl From<pixi_glob::GlobHashError> for BuildBackendMetadataError {
+    fn from(err: pixi_glob::GlobHashError) -> Self {
+        Self::GlobHash(Arc::new(err))
+    }
+}
+
+impl From<pixi_glob::GlobSetError> for BuildBackendMetadataError {
+    fn from(err: pixi_glob::GlobSetError) -> Self {
+        Self::GlobSet(Arc::new(err))
+    }
+}
+
+impl From<pixi_path::NormalizeError> for BuildBackendMetadataError {
+    fn from(err: pixi_path::NormalizeError) -> Self {
+        Self::NormalizePath(Arc::new(err))
+    }
 }
 
 #[cfg(test)]

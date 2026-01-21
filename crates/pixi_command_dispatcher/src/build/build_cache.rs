@@ -3,6 +3,7 @@ use std::{
     hash::{Hash, Hasher},
     io::SeekFrom,
     path::PathBuf,
+    sync::Arc,
 };
 
 use crate::build::{SourceCodeLocation, source_checkout_cache_key};
@@ -10,7 +11,7 @@ use async_fd_lock::{LockWrite, RwLockWriteGuard};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ordermap::OrderMap;
 use pixi_build_discovery::{BackendInitializationParams, DiscoveredBackend};
-use pixi_build_types::{ProjectModelV1, TargetSelectorV1};
+use pixi_build_types::{ProjectModel, TargetSelector};
 use pixi_path::{AbsPathBuf, AbsPresumedDirPath, AbsPresumedDirPathBuf, AbsPresumedFilePathBuf};
 use pixi_record::{PinnedSourceSpec, VariantValue};
 use pixi_stable_hash::{StableHashBuilder, json::StableJson, map::StableMap};
@@ -27,11 +28,11 @@ pub struct BuildCache {
     pub(crate) root: AbsPresumedDirPathBuf,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum BuildCacheError {
     /// An I/O error occurred while reading or writing the cache.
     #[error("an IO error occurred while {0} {1}")]
-    IoError(String, AbsPathBuf, #[source] std::io::Error),
+    IoError(String, AbsPathBuf, #[source] Arc<std::io::Error>),
 }
 
 /// Defines additional input besides the source files that are used to compute
@@ -157,7 +158,7 @@ impl BuildCache {
                 BuildCacheError::IoError(
                     "creating cache directory".to_string(),
                     cache_dir.clone(),
-                    e,
+                    Arc::new(e),
                 )
             })?
             .to_path_buf();
@@ -175,7 +176,7 @@ impl BuildCache {
                 BuildCacheError::IoError(
                     "opening cache file".to_string(),
                     cache_file_path.clone().into(),
-                    e,
+                    Arc::new(e),
                 )
             })?;
 
@@ -183,7 +184,7 @@ impl BuildCache {
             BuildCacheError::IoError(
                 "locking cache file".to_string(),
                 cache_file_path.clone().into(),
-                e.error,
+                Arc::new(e.error),
             )
         })?;
 
@@ -196,7 +197,7 @@ impl BuildCache {
                 BuildCacheError::IoError(
                     "reading cache file".to_string(),
                     cache_file_path.clone().into(),
-                    e,
+                    Arc::new(e),
                 )
             })?;
 
@@ -304,7 +305,7 @@ impl BuildCacheEntry {
             BuildCacheError::IoError(
                 "seeking to start of cache file".to_string(),
                 self.cache_file_path.clone().into(),
-                e,
+                Arc::new(e),
             )
         })?;
         let bytes = serde_json::to_vec(&metadata).expect("serialization to JSON should not fail");
@@ -312,7 +313,7 @@ impl BuildCacheEntry {
             BuildCacheError::IoError(
                 "writing metadata to cache file".to_string(),
                 self.cache_file_path.clone().into(),
-                e,
+                Arc::new(e),
             )
         })?;
         self.file
@@ -323,7 +324,7 @@ impl BuildCacheEntry {
                 BuildCacheError::IoError(
                     "setting length of cache file".to_string(),
                     self.cache_file_path.clone().into(),
-                    e,
+                    Arc::new(e),
                 )
             })?;
 
@@ -344,13 +345,13 @@ impl BuildCacheEntry {
 /// warranted.
 pub struct PackageBuildInputHashBuilder<'a> {
     /// The project model itself. Contains dependencies and more.
-    pub project_model: Option<&'a ProjectModelV1>,
+    pub project_model: Option<&'a ProjectModel>,
 
     /// The backend specific configuration
     pub configuration: Option<&'a serde_json::Value>,
 
     /// Target specific backend configuration
-    pub target_configuration: Option<&'a OrderMap<TargetSelectorV1, serde_json::Value>>,
+    pub target_configuration: Option<&'a OrderMap<TargetSelector, serde_json::Value>>,
 }
 
 impl PackageBuildInputHashBuilder<'_> {
